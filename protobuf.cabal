@@ -123,6 +123,25 @@ benchmark bench
     unordered-containers
   ghc-options:   -O2
 
+executable prof
+  hs-source-dirs: bench
+  main-is: Prof.hs
+  build-depends:
+    base,
+    criterion,
+    deepseq,
+    bytestring,
+    cereal,
+    containers,
+    hex,
+    mtl,
+    protobuf,
+    tagged,
+    text,
+    unordered-containers
+  ghc-options: -rtsopts
+
+
 source-repository head
   type:     git
   location: https://github.com/alphaHeavy/protobuf.git
