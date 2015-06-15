@@ -19,6 +19,9 @@ module Data.ProtocolBuffers.Wire
   , putVarSInt
   , putVarUInt
   , putVarintPrefixedBS
+  , putWireField
+  , putWireTag
+  , HasWireType(..)
   , zzEncode32
   , zzEncode64
   , zzDecode32
@@ -140,7 +143,18 @@ wireFieldTag f = case f of
   Fixed32Field   t _ -> t
 
 class EncodeWire a where
-  encodeWire :: Tag -> a -> Builder
+  encodeWire :: a -> Builder
+
+class HasWireType a where
+  wireType :: a -> Word32
+
+instance HasWireType WireField where
+  wireType (VarintField    t val) = 0
+  wireType (Fixed64Field   t val) = 1
+  wireType (DelimitedField t val) = 2
+  wireType (StartField     t    ) = 3
+  wireType (EndField       t    ) = 4
+  wireType (Fixed32Field   t val) = 5
 
 class DecodeWire a where
   decodeWire :: WireField -> Get a
@@ -152,140 +166,207 @@ deriving instance DecodeWire a => DecodeWire (Always (Value a))
 deriving instance DecodeWire a => DecodeWire (Last (Value a))
 
 instance EncodeWire a => EncodeWire [Value a] where
-  encodeWire t = foldMap (encodeWire t)
+  encodeWire = foldMap encodeWire
+
+instance (HasWireType a) => HasWireType [a] where
+  wireType _ = wireType (undefined :: a)
+
+instance (HasWireType a) => HasWireType (Last a) where
+  wireType _ = wireType (undefined :: a)
+
+instance (HasWireType a) => HasWireType (PackedList a) where
+  wireType _ = wireType (undefined :: a)
 
 instance EncodeWire WireField where
-  encodeWire t f
-    | t == wireFieldTag f = putWireField f
-    | otherwise           = error "Specified tag and field tag do not match"
+  encodeWire = putWireField
 
 instance DecodeWire WireField where
   decodeWire = pure
 
 instance EncodeWire a => EncodeWire (Value a) where
-  encodeWire t = foldMap (encodeWire t)
+  encodeWire = foldMap encodeWire
+
+instance (HasWireType a) => HasWireType (Value a) where
+  wireType _ = wireType (undefined :: a)
 
 instance DecodeWire a => DecodeWire (Value a) where
   decodeWire = fmap Value . decodeWire
 
 instance EncodeWire a => EncodeWire (Maybe (Value a)) where
-  encodeWire t = foldMap (encodeWire t)
+  encodeWire = foldMap encodeWire
+
+instance (HasWireType a) => HasWireType (Maybe a) where
+  wireType _ = wireType (undefined :: a)
 
 instance DecodeWire a => DecodeWire (Maybe (Value a)) where
   decodeWire = fmap (Just . Value) . decodeWire
 
 instance EncodeWire Int32 where
-  encodeWire t val = putWireTag t 0 <> putVarSInt val
+  encodeWire val = putVarSInt val
+
+instance HasWireType Int32 where
+  wireType _ = 0
 
 instance DecodeWire Int32 where
   decodeWire (VarintField  _ val) = pure $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire Int64 where
-  encodeWire t val = putWireTag t 0 <> putVarSInt val
+  encodeWire val = putVarSInt val
+
+instance HasWireType Int64 where
+  wireType _ = 0
 
 instance DecodeWire Int64 where
   decodeWire (VarintField  _ val) = pure $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire Word32 where
-  encodeWire t val = putWireTag t 0 <> putVarUInt val
+  encodeWire val = putVarUInt val
+
+instance HasWireType Word32 where
+  wireType _ = 0
 
 instance DecodeWire Word32 where
   decodeWire (VarintField  _ val) = pure $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire Word64 where
-  encodeWire t val = putWireTag t 0 <> putVarUInt val
+  encodeWire val = putVarUInt val
+
+instance HasWireType Word64 where
+  wireType _ = 0
 
 instance DecodeWire Word64 where
   decodeWire (VarintField  _ val) = pure val
   decodeWire _ = empty
 
 instance EncodeWire (Signed Int32) where
-  encodeWire t (Signed val) = putWireTag t 0 <> putVarSInt (zzEncode32 val)
+  encodeWire (Signed val) = putVarSInt (zzEncode32 val)
+
+instance HasWireType (Signed Int32) where
+  wireType _ = 0
 
 instance DecodeWire (Signed Int32) where
   decodeWire (VarintField  _ val) = pure . Signed . zzDecode32 $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire (Signed Int64) where
-  encodeWire t (Signed val) = putWireTag t 0 <> putVarSInt (zzEncode64 val)
+  encodeWire (Signed val) = putVarSInt (zzEncode64 val)
+
+instance HasWireType (Signed Int64) where
+  wireType _ = 0
 
 instance DecodeWire (Signed Int64) where
   decodeWire (VarintField  _ val) = pure . Signed . zzDecode64 $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire (Fixed Int32) where
-  encodeWire t (Fixed val) = putWireTag t 5 <> putWord32le (fromIntegral val)
+  encodeWire (Fixed val) = putWord32le (fromIntegral val)
+
+instance HasWireType (Fixed Int32) where
+  wireType _ = 5
 
 instance DecodeWire (Fixed Int32) where
   decodeWire (Fixed32Field _ val) = pure . Fixed $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire (Fixed Int64) where
-  encodeWire t (Fixed val) = putWireTag t 1 <> putWord64le (fromIntegral val)
+  encodeWire (Fixed val) = putWord64le (fromIntegral val)
+
+instance HasWireType (Fixed Int64) where
+  wireType _ = 1
 
 instance DecodeWire (Fixed Int64) where
   decodeWire (Fixed64Field _ val) = pure . Fixed $ fromIntegral val
   decodeWire _ = empty
 
 instance EncodeWire (Fixed Word32) where
-  encodeWire t (Fixed val) = putWireTag t 5 <> putWord32le val
+  encodeWire (Fixed val) = putWord32le val
+
+instance HasWireType (Fixed Word32) where
+  wireType _ = 5
 
 instance DecodeWire (Fixed Word32) where
   decodeWire (Fixed32Field _ val) = pure $ Fixed val
   decodeWire _ = empty
 
 instance EncodeWire (Fixed Word64) where
-  encodeWire t (Fixed val) = putWireTag t 1 <> putWord64le val
+  encodeWire (Fixed val) = putWord64le val
+
+instance HasWireType (Fixed Word64) where
+  wireType _ = 5
 
 instance DecodeWire (Fixed Word64) where
   decodeWire (Fixed64Field _ val) = pure $ Fixed val
   decodeWire _ = empty
 
 instance EncodeWire Bool where
-  encodeWire t val = putWireTag t 0 <> putVarUInt (if val then 1 else (0 :: Int32))
+  encodeWire val = putVarUInt (if val then 1 else (0 :: Int32))
+
+instance HasWireType Bool where
+  wireType _ = 0
 
 instance DecodeWire Bool where
   decodeWire (VarintField _ val) = pure $ val /= 0
   decodeWire _ = empty
 
 instance EncodeWire Float where
-  encodeWire t val = putWireTag t 5 <> putFloat32le val
+  encodeWire val = putFloat32le val
+
+instance HasWireType Float where
+  wireType _ = 5
 
 instance DecodeWire Float where
   decodeWire (Fixed32Field _ val) = pure $ F.wordToFloat val
   decodeWire _ = empty
 
 instance EncodeWire Double where
-  encodeWire t val = putWireTag t 1 <> putFloat64le val
+  encodeWire val = putFloat64le val
+
+instance HasWireType Double where
+  wireType _ = 1
 
 instance DecodeWire Double where
   decodeWire (Fixed64Field _ val) = pure $ F.wordToDouble val
   decodeWire _ = empty
 
 instance EncodeWire Builder where
-  encodeWire t val = putWireTag t 2 <> putVarUInt (size val) <> val
+  encodeWire val = putVarUInt (size val) <> val
+
+instance HasWireType Builder where
+  wireType _ = 2
 
 instance EncodeWire LBS.ByteString where
-  encodeWire t val = encodeWire t $ fromLazyByteString val
+  encodeWire val = fromLazyByteString val
+
+instance HasWireType LBS.ByteString where
+  wireType _ = 2
 
 instance EncodeWire ByteString where
-  encodeWire t val = encodeWire t $ fromByteString val
+  encodeWire val = fromByteString val
+
+instance HasWireType ByteString where
+  wireType _ = 2
 
 instance DecodeWire ByteString where
   decodeWire (DelimitedField _ bs) = pure bs
   decodeWire _ = empty
 
 instance EncodeWire String where
-  encodeWire t = encodeWire t . T.pack
+  encodeWire = encodeWire . T.pack
+
+instance HasWireType String where
+  wireType _ = 2
 
 instance DecodeWire String where
   decodeWire = fmap T.unpack . decodeWire
 
 instance EncodeWire T.Text where
-  encodeWire t = encodeWire t . T.encodeUtf8
+  encodeWire = encodeWire . T.encodeUtf8
+
+instance HasWireType T.Text where
+  wireType _ = 2
 
 instance DecodeWire T.Text where
   decodeWire (DelimitedField _ bs) =
@@ -305,11 +386,10 @@ encodePackedList :: Tag -> Builder -> Builder
 {-# INLINE encodePackedList #-}
 encodePackedList t p = case size p of
   0 -> mempty
-  _ -> encodeWire t p
+  _ -> encodeWire p
 
 instance EncodeWire (PackedList (Value Int32)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarSInt . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putVarSInt . runValue) xs
 
 instance DecodeWire (PackedList (Value Int32)) where
   decodeWire x = do
@@ -317,8 +397,7 @@ instance DecodeWire (PackedList (Value Int32)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value Int64)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarSInt . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putVarSInt . runValue) xs
 
 instance DecodeWire (PackedList (Value Int64)) where
   decodeWire x = do
@@ -326,8 +405,7 @@ instance DecodeWire (PackedList (Value Int64)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value Word32)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarUInt . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putVarUInt . runValue) xs
 
 instance DecodeWire (PackedList (Value Word32)) where
   decodeWire x = do
@@ -335,8 +413,7 @@ instance DecodeWire (PackedList (Value Word32)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value Word64)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarUInt . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putVarUInt . runValue) xs
 
 instance DecodeWire (PackedList (Value Word64)) where
   decodeWire x = do
@@ -344,9 +421,9 @@ instance DecodeWire (PackedList (Value Word64)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value (Signed Int32))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Signed x) = putVarSInt $ zzEncode32 x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Signed Int32))) where
   decodeWire x = do
@@ -354,9 +431,9 @@ instance DecodeWire (PackedList (Value (Signed Int32))) where
     return . PackedList $ Value . Signed . zzDecode32 <$> xs
 
 instance EncodeWire (PackedList (Value (Signed Int64))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Signed x) = putVarSInt $ zzEncode64 x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Signed Int64))) where
   decodeWire x = do
@@ -364,9 +441,9 @@ instance DecodeWire (PackedList (Value (Signed Int64))) where
     return . PackedList $ Value . Signed . zzDecode64 <$> xs
 
 instance EncodeWire (PackedList (Value (Fixed Word32))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Fixed x) = putWord32le x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Fixed Word32))) where
   decodeWire x = do
@@ -374,9 +451,9 @@ instance DecodeWire (PackedList (Value (Fixed Word32))) where
     return . PackedList $ Value . Fixed <$> xs
 
 instance EncodeWire (PackedList (Value (Fixed Word64))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Fixed x) = putWord64le x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Fixed Word64))) where
   decodeWire x = do
@@ -384,9 +461,9 @@ instance DecodeWire (PackedList (Value (Fixed Word64))) where
     return . PackedList $ Value . Fixed <$> xs
 
 instance EncodeWire (PackedList (Value (Fixed Int32))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Fixed x) = putWord32le $ fromIntegral x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Fixed Int32))) where
   decodeWire x = do
@@ -394,9 +471,9 @@ instance DecodeWire (PackedList (Value (Fixed Int32))) where
     return . PackedList $ Value . Fixed . fromIntegral <$> xs
 
 instance EncodeWire (PackedList (Value (Fixed Int64))) where
-  encodeWire t (PackedList xs) = do
+  encodeWire (PackedList xs) = do
     let c (Fixed x) = putWord64le $ fromIntegral x
-    encodePackedList t $ foldMap (c . runValue) xs
+    foldMap (c . runValue) xs
 
 instance DecodeWire (PackedList (Value (Fixed Int64))) where
   decodeWire x = do
@@ -404,8 +481,7 @@ instance DecodeWire (PackedList (Value (Fixed Int64))) where
     return . PackedList $ Value . Fixed . fromIntegral <$> xs
 
 instance EncodeWire (PackedList (Value Float)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putFloat32le . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putFloat32le . runValue) xs
 
 instance DecodeWire (PackedList (Value Float)) where
   decodeWire x = do
@@ -413,8 +489,7 @@ instance DecodeWire (PackedList (Value Float)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value Double)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putFloat64le . runValue) xs
+  encodeWire (PackedList xs) = foldMap (putFloat64le . runValue) xs
 
 instance DecodeWire (PackedList (Value Double)) where
   decodeWire x = do
@@ -422,8 +497,7 @@ instance DecodeWire (PackedList (Value Double)) where
     return . PackedList $ Value <$> xs
 
 instance EncodeWire (PackedList (Value Bool)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarUInt . fromEnum) xs
+  encodeWire (PackedList xs) = foldMap (putVarUInt . fromEnum) xs
 
 instance DecodeWire (PackedList (Value Bool)) where
   decodeWire x = do
@@ -431,8 +505,7 @@ instance DecodeWire (PackedList (Value Bool)) where
     return . PackedList $ toEnum <$> xs
 
 instance Enum a => EncodeWire (PackedList (Enumeration a)) where
-  encodeWire t (PackedList xs) =
-    encodePackedList t $ foldMap (putVarUInt . fromEnum) xs
+  encodeWire (PackedList xs) = foldMap (putVarUInt . fromEnum) xs
 
 instance Enum a => DecodeWire (PackedList (Enumeration a)) where
   decodeWire x = do
@@ -440,7 +513,7 @@ instance Enum a => DecodeWire (PackedList (Enumeration a)) where
     return . PackedList $ toEnum <$> xs
 
 instance (Foldable f, Enum a) => EncodeWire (f (Enumeration a)) where
-  encodeWire t = foldMap (encodeWire t . c . runEnumeration) where
+  encodeWire = foldMap (encodeWire . c . runEnumeration) where
     c :: a -> Int32
     c = fromIntegral . fromEnum
 

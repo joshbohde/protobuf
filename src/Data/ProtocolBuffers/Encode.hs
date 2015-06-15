@@ -44,9 +44,9 @@ class Encode (a :: *) where
   encode = gencode . from
 
 -- | Untyped message encoding
-instance Encode (HashMap Tag [WireField]) where
-  encode = foldMap step . HashMap.toList where
-    step = uncurry (foldMap . encodeWire)
+--instance Encode (HashMap Tag [WireField]) where
+--  encode = foldMap step . HashMap.toList where
+--    step = (foldMap . putWireField)
 
 class GEncode (f :: * -> *) where
   gencode :: f a -> Builder
@@ -61,9 +61,9 @@ instance (GEncode a, GEncode b) => GEncode (a :+: b) where
   gencode (L1 x) = gencode x
   gencode (R1 y) = gencode y
 
-instance (EncodeWire a, KnownNat n, Foldable f) => GEncode (K1 i (Field n (f a))) where
-  gencode = foldMap (encodeWire tag) . runField . unK1 where
-    tag = fromIntegral $ natVal (Proxy :: Proxy n)
+instance (EncodeWire a, KnownNat n, Foldable f, HasWireType a) => GEncode (K1 i (Field n (f a))) where
+  gencode = foldMap (mappend tag . encodeWire) . runField . unK1 where
+    tag = putWireTag (fromIntegral $ natVal (Proxy :: Proxy n)) (wireType (undefined :: a))
 
 instance GEncode U1 where
   gencode _ = empty

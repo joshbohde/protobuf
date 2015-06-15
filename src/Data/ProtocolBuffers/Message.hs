@@ -8,6 +8,7 @@
 {-# LANGUAGE TypeOperators #-}
 {-# LANGUAGE TypeSynonymInstances #-}
 {-# LANGUAGE UndecidableInstances #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 
 module Data.ProtocolBuffers.Message
   ( Message(..)
@@ -155,8 +156,14 @@ instance GMessageNFData U1 where
 type instance Optional n (Message a) = Field n (OptionalField (Maybe (Message a)))
 type instance Required n (Message a) = Field n (RequiredField (Always (Message a)))
 
+instance HasWireType (Message m) where
+  wireType _ = 2
+
+instance (HasWireType a) => HasWireType (Always a) where
+  wireType _ = wireType (undefined :: a)
+
 instance (Foldable f, Encode m) => EncodeWire (f (Message m)) where
-  encodeWire t = foldMap (encodeWire t . encode . runMessage)
+  encodeWire = foldMap (encodeWire . encode . runMessage)
 
 instance Decode m => DecodeWire (Message m) where
   decodeWire (DelimitedField _ bs) = pure $ Message $ runGet decodeMessage $ LBS.fromStrict bs
